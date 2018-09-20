@@ -1,8 +1,10 @@
 import glfw
 
 from OpenGL.GL import GL_COLOR_BUFFER_BIT, glViewport, glClear, glClearColor
-import World
+
+import Random
 import Ray
+import World
 
 
 def main():
@@ -28,6 +30,9 @@ def main():
     ray = Ray.Resources()
     ray.initialize()
 
+    random = Random.Resources()
+    random.initialize()
+
     #for iteration in range(2):
     #    Ray.trace(ray, iteration, world.display_buffer)
 
@@ -41,8 +46,10 @@ def main():
 
     World.display(world)
 
-    for iteration in range(200):
-        Ray.trace(ray, iteration, world.display_buffer)
+    Random.init(random)
+
+    for iteration in range(4):
+        Ray.trace(ray, iteration, world.display_buffer, random.seed_buffer)
         Ray.display(ray, iteration + 1)
 
     # Done !

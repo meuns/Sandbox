@@ -1,76 +1,88 @@
 # coding: utf8
 
-from OpenGL.GL import GL_COMPUTE_SHADER, GL_FRAGMENT_SHADER, GL_VERTEX_SHADER, \
-    GL_SHADER_STORAGE_BUFFER, GL_SHADER_STORAGE_BARRIER_BIT, GL_LINES, \
-    GL_BLEND, GL_FUNC_ADD, GL_ONE, \
-    glUseProgram, glBindBufferBase, glDrawArrays, glBindVertexArray, glDispatchCompute, glMemoryBarrier, glEnable,\
-    glDisable, glBlendFunc, glBlendEquation
+from OpenGL.GL import GL_COMPUTE_SHADER, \
+    GL_SHADER_STORAGE_BUFFER, GL_SHADER_STORAGE_BARRIER_BIT, \
+    glUseProgram, glBindBufferBase, glDispatchCompute, glMemoryBarrier
 
-from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
+from Buffer import prepare_uint_buffer_data, initialize_buffer, dispose_buffer
 from Shader import initialize_shader, initialize_program, dispose_program
+from Config import RAY_COUNT
 
 
 BUFFER_LAYOUT = """
-#define MERSENNE_TWISTER_COUNT %d
+#define MERSENNE_TWISTER_COUNT {mersenne_twister_count}
 
 layout(std430, binding = {binding}) buffer MersenneTwister
-{
-    uint4 mt_status[MERSENNE_TWISTER_COUNT];
+{{
+    uvec4 mt_status[MERSENNE_TWISTER_COUNT];
     uint mt_m1[MERSENNE_TWISTER_COUNT];
     uint mt_m2[MERSENNE_TWISTER_COUNT];
     uint mt_tmat[MERSENNE_TWISTER_COUNT];
-};
-"""
+}};
+""".format(binding=3, mersenne_twister_count=RAY_COUNT)
 
-RAND_SHADER = """
-float random()
+SHADER = """
+float random(uint generator_index)
 {{
-  uint x = (mt_status[0] & 0x7fffffffU) ^ mt_status[1] ^ mt_status[2];
-  uint y = mt_status[3];
-  x ^= (x << 1);
-  y ^= (y >> 1) ^ x;
-  mt_status[0] = mt_status[1];
-  mt_status[1] = mt_status[2];
-  mt_status[2] = x ^ (y << 10);
-  mt_status[3] = y;
-  mt_status[1] ^= -(y & 1U) & mt_m1;
-  mt_status[2] ^= -(y & 1U) & mt_m2;
+    uvec4 status = mt_status[generator_index];
 
-  uint t0, t1;
-  t0 = mt_status[3];
-  t1 = mt_status[0] + (mt_status[2] >> 8);
-  t0 ^= t1;
-  t0 ^= -(t1 & 1U) & mt_tmat;
-
-  return t0 * (1.0f / 4294967296.0f);
+    uint x = (status[0] & 0x7fffffffU) ^ status[1] ^ status[2];
+    uint y = status[3];
+    x ^= (x << 1);
+    y ^= (y >> 1) ^ x;
+    status[0] = status[1];
+    status[1] = status[2];
+    status[2] = x ^ (y << 10);
+    status[3] = y;
+    status[1] ^= -(y & 1U) & mt_m1[generator_index];
+    status[2] ^= -(y & 1U) & mt_m2[generator_index];
+    
+    uint t0, t1;
+    t0 = status[3];
+    t1 = status[0] + (status[2] >> 8);
+    t0 ^= t1;
+    t0 ^= -(t1 & 1U) & mt_tmat[generator_index];
+    
+    mt_status[generator_index] = status;
+    
+    return t0 * (1.0f / 4294967296.0f);
 }}
-"""
+""".format()
 
 
 INIT_SHADER = """
+#version 430
+
+{include_rand_buffer_layout}
 {include_rand_shader}
 
-void init(uint seed, uint m1, uint m2, uint tmat)
-{{
-  mt_status[0] = seed;
-  mt_status[1] = m1;
-  mt_status[2] = m2;
-  mt_status[3] = tmat;
-  mt_m1 = m1;
-  mt_m2 = m2;
-  mt_tmat = tmat;
+layout (local_size_x = 16, local_size_y = 1) in;
 
-  for (int i = 1; i < 8; i++)
+void init(uint generator_index, uint seed, uint m1, uint m2, uint tmat)
+{{
+  uvec4 status = uvec4(seed, m1, m2, tmat);
+  for (uint i = 1; i < 8; i++)
   {{
-    mt_status[i & 3] ^= uint(i) + 1812433253U * mt_status[(i - 1) & 3] ^ (mt_status[(i - 1) & 3] >> 30);
+    status[i & 3] ^= i + 1812433253U * status[(i - 1) & 3] ^ (status[(i - 1) & 3] >> 30);
   }}
   
-  for (int i = 0; i < 12; i++)
+  mt_status[generator_index] = status;
+  mt_m1[generator_index] = m1;
+  mt_m2[generator_index] = m2;
+  mt_tmat[generator_index] = tmat;
+  
+  for (uint i = 0; i < 12; i++)
   {{
-    random();
+    random(generator_index);
   }}
 }}
-""".format(include_rand_shader=RAND_SHADER)
+
+void main()
+{{
+    uint generator_index = gl_GlobalInvocationID.x;
+    init(generator_index, 234340U ^ generator_index, 0xf50a1d49U, 0xffa8ffebU, 0x0bf2bfffU);  
+}}
+""".format(include_rand_buffer_layout=BUFFER_LAYOUT, include_rand_shader=SHADER)
 
 
 class Resources(object):
@@ -82,22 +94,20 @@ class Resources(object):
 
     def initialize(self):
 
-        self.init_program = initialize_program(
-            initialize_shader(GL_COMPUTE_SHADER, INIT_SHADER)
-        )
-
-        self.seed_buffer = initialize_buffer(prepare_float_buffer_data())
+        self.init_program = initialize_program(initialize_shader(GL_COMPUTE_SHADER, INIT_SHADER))
+        self.seed_buffer = initialize_buffer(prepare_uint_buffer_data([0] * 7 * RAY_COUNT))
 
     def dispose(self):
 
-        self.init_program = dispose_program(self.display_line_program)
-        self.seed_buffer = dispose_buffer(self.display_normal_program)
+        self.init_program = dispose_program(self.init_program)
+        self.seed_buffer = dispose_buffer(self.seed_buffer)
 
 
 def init(resources):
 
+    glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glUseProgram(resources.init_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, resources.seed_buffer)
-    glDispatchCompute(1, 1, 1)
+    glDispatchCompute(RAY_COUNT // 16, 1, 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, 0)
     glUseProgram(0)

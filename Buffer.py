@@ -11,6 +11,12 @@ def prepare_float_buffer_data(float_array):
     return sizeof(buffer_data_type), buffer_data_type(*float_array)
 
 
+def prepare_uint_buffer_data(int_array):
+
+    buffer_data_type = GLuint * len(int_array)
+    return sizeof(buffer_data_type), buffer_data_type(*int_array)
+
+
 def initialize_buffer(buffer_data_size, buffer_data=None, buffer_usage=GL_STATIC_DRAW):
 
     if buffer_data is None:

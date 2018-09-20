@@ -9,10 +9,11 @@ from OpenGL.GL import GL_COMPUTE_SHADER, GL_FRAGMENT_SHADER, GL_VERTEX_SHADER, \
 from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
 from Shader import initialize_shader, initialize_program, dispose_program
 from Vertex import initialize_vertex_array, dispose_vertex_array
+from Random import BUFFER_LAYOUT as RANDOM_BUFFER_LAYOUT, SHADER as RANDOM_SHADER
 from World import BUFFER_LAYOUT as WORLD_BUFFER_LAYOUT
 
 
-TRACE_RAY_COUNT = 5
+from Config import RAY_COUNT, RAY_GROUP_SIZE
 
 
 BUFFER_LAYOUT = """
@@ -26,22 +27,20 @@ layout(std430, binding = {binding}) buffer RayBuffer{suffix}
 """
 
 
-RAY_BUFFER0_LAYOUT = BUFFER_LAYOUT.format(binding=1, suffix=0, ray_count=TRACE_RAY_COUNT)
+RAY_BUFFER0_LAYOUT = BUFFER_LAYOUT.format(binding=1, suffix=0, ray_count=RAY_COUNT)
 
 
-RAY_BUFFER1_LAYOUT = BUFFER_LAYOUT.format(binding=2, suffix=1, ray_count=TRACE_RAY_COUNT)
+RAY_BUFFER1_LAYOUT = BUFFER_LAYOUT.format(binding=2, suffix=1, ray_count=RAY_COUNT)
 
 
 TRACE_COMPUTE_SHADER = """
 #version 430
 
 {world_buffer_layout}
-
 {ray_buffer0_layout}
-
 {ray_buffer1_layout}
-
-layout (local_size_x = {ray_count}, local_size_y = 1) in;
+{include_random_layout}
+{include_random}
 
 vec2 refract(vec2 i, vec2 n, float inv_eta)
 {{
@@ -69,6 +68,8 @@ float fresnel_dielectric_dielectric(float eta, float cos_theta)
 
    return 0.5 * (rs * rs + rp * rp);
 }}
+
+layout (local_size_x = {ray_group_size}, local_size_y = 1) in;
 
 void main()
 {{
@@ -110,9 +111,19 @@ void main()
         }}
     }}
     
-    min_normal = normalize(min_normal) * sign(-dot(min_normal, ray0_d0));
-    vec2 ray1_d = reflect(ray0_d0, min_normal);
-    vec2 ray1_o = min_hit + 1e-6 * min_normal;
+    vec2 ray1_d, ray1_o;
+    if (random(ray_index) < 0.9)
+    {{   
+        min_normal = normalize(min_normal) * sign(-dot(min_normal, ray0_d0));
+        ray1_d = reflect(ray0_d0, min_normal);
+        ray1_o = min_hit + 1e-6 * min_normal;
+    }}
+    else
+    {{
+        min_normal = normalize(min_normal) * sign(-dot(min_normal, ray0_d0));
+        ray1_d = refract(ray0_d0, min_normal, 1.2);
+        ray1_o = min_hit - 1e-6 * min_normal;
+    }}
     
     ray1_ox[ray_index] = ray1_o.x;
     ray1_oy[ray_index] = ray1_o.y;
@@ -123,7 +134,9 @@ void main()
     world_buffer_layout=WORLD_BUFFER_LAYOUT,
     ray_buffer0_layout=RAY_BUFFER0_LAYOUT,
     ray_buffer1_layout=RAY_BUFFER1_LAYOUT,
-    ray_count=TRACE_RAY_COUNT,
+    include_random_layout=RANDOM_BUFFER_LAYOUT,
+    include_random=RANDOM_SHADER,
+    ray_group_size=RAY_GROUP_SIZE,
 )
 
 
@@ -157,21 +170,21 @@ out vec4 Color;
 
 void main()
 {
-    Color = vec4(0.1, 0.1, 0.1, 0.1); 
+    Color = vec4(0.05); 
 }
 """
 
+HALF_RAY_COUNT = RAY_COUNT // 2
+RAY0_DATA_OX = [-0.9 + (i / HALF_RAY_COUNT) * 1.8 for i in range(HALF_RAY_COUNT)] * 2
+RAY0_DATA_OY = [+0.0] * RAY_COUNT
+RAY0_DATA_DX = [+0.0] * RAY_COUNT
+RAY0_DATA_DY = [-1.0] * HALF_RAY_COUNT + [+1.0] * HALF_RAY_COUNT
 
-RAY0_DATA_OX = [-0.75, -0.25, +0.0, +0.25, +0.75]
-RAY0_DATA_OY = [+0.0, +0.0, +0.0, +0.0, +0.0]
-RAY0_DATA_DX = [+0.0, +0.0, +0.0, +0.0, +0.0]
-RAY0_DATA_DY = [-1.0, -1.0, -1.0, -1.0, -1.0]
 
-
-RAY1_DATA_OX = [+0.0, +0.0, +0.0, +0.0, +0.0]
-RAY1_DATA_OY = [+0.0, +0.0, +0.0, +0.0, +0.0]
-RAY1_DATA_DX = [+0.0, +0.0, +0.0, +0.0, +0.0]
-RAY1_DATA_DY = [+0.0, +0.0, +0.0, +0.0, +0.0]
+RAY1_DATA_OX = [+0.0] * RAY_COUNT
+RAY1_DATA_OY = [+0.0] * RAY_COUNT
+RAY1_DATA_DX = [+0.0] * RAY_COUNT
+RAY1_DATA_DY = [+0.0] * RAY_COUNT
 
 
 class Resources(object):
@@ -210,13 +223,15 @@ class Resources(object):
         self.display_vertex_array = dispose_vertex_array(self.display_vertex_array)
 
 
-def trace(resources, iteration, world_buffer):
+def trace(resources, iteration, world_buffer, random_buffer):
 
     glUseProgram(resources.trace_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, world_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
-    glDispatchCompute(1, 1, 1)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, random_buffer)
+    glDispatchCompute(RAY_COUNT // RAY_GROUP_SIZE, 1, 1)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, 0)
@@ -233,7 +248,7 @@ def display(resources, iteration):
     glUseProgram(resources.display_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
-    glDrawArrays(GL_LINES, 0, TRACE_RAY_COUNT * 2)
+    glDrawArrays(GL_LINES, 0, RAY_COUNT * 2)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0)
     glUseProgram(0)

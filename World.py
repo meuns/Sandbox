@@ -20,10 +20,10 @@ def prepare_lines(line_strip):
 
 
 BUFFER_INT0_DATA_X = prepare_lines([-1.00, -0.50, +0.00, +0.50, +1.00])
-BUFFER_INT0_DATA_Y = prepare_lines([-0.00, -0.099, -0.20, -0.10, -0.00])
+BUFFER_INT0_DATA_Y = prepare_lines([-0.00, -0.15, -0.20, -0.15, -0.00])
 
 BUFFER_INT1_DATA_X = prepare_lines([-1.00, -0.50, +0.00, +0.50, +1.00])
-BUFFER_INT1_DATA_Y = prepare_lines([+0.00, +0.10, +0.20, +0.10, +0.00])
+BUFFER_INT1_DATA_Y = prepare_lines([+0.00, +0.15, +0.20, +0.15, +0.00])
 
 WORLD_LINE_COUNT = (len(BUFFER_INT0_DATA_X) + len(BUFFER_INT1_DATA_X)) >> 1
 

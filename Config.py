@@ -1,0 +1,4 @@
+# coding: utf8
+
+RAY_COUNT = 128*3
+RAY_GROUP_SIZE = 128
