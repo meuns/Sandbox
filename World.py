@@ -1,6 +1,7 @@
 # coding: utf8
 
 from itertools import islice
+from random import random
 
 from OpenGL.GL import GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_SHADER_STORAGE_BUFFER, GL_LINES, \
     glBindVertexArray, glUseProgram, glDrawArrays, glBindBufferBase
@@ -19,13 +20,13 @@ def prepare_lines(line_strip):
     return lines
 
 
-BUFFER_INT0_DATA_X = prepare_lines([-1.00, -0.50, +0.00, +0.50, +1.00])
-BUFFER_INT0_DATA_Y = prepare_lines([-0.00, -0.15, -0.20, -0.15, -0.00])
-
-BUFFER_INT1_DATA_X = prepare_lines([-1.00, -0.50, +0.00, +0.50, +1.00])
-BUFFER_INT1_DATA_Y = prepare_lines([+0.00, +0.15, +0.20, +0.15, +0.00])
-
-WORLD_LINE_COUNT = (len(BUFFER_INT0_DATA_X) + len(BUFFER_INT1_DATA_X)) >> 1
+INTX_LINE_COUNT = 128
+INTX_POINT_COUNT = INTX_LINE_COUNT + 1
+#INT0_X = [-1.0 + (i / INTX_LINE_COUNT) * 2.0 for i in range(INTX_POINT_COUNT)]
+#INT0_Y = [+.2] * INTX_POINT_COUNT
+INT1_X = [-1.0 + (i / INTX_LINE_COUNT) * 2.0 for i in range(INTX_POINT_COUNT)]
+INT1_Y = [-.2 + 0.01 * random() for i in range(INTX_POINT_COUNT)]
+WORLD_LINE_COUNT = INTX_LINE_COUNT #* 2
 
 
 BUFFER_LAYOUT = """
@@ -131,10 +132,10 @@ class Resources(object):
         )
 
         self.display_buffer = initialize_buffer(prepare_float_buffer_data(
-            BUFFER_INT0_DATA_X +
-            BUFFER_INT1_DATA_X +
-            BUFFER_INT0_DATA_Y +
-            BUFFER_INT1_DATA_Y
+            #prepare_lines(INT0_X) +
+            prepare_lines(INT1_X) +
+            #prepare_lines(INT0_Y) +
+            prepare_lines(INT1_Y)
         ))
 
         self.display_vertex_array = initialize_vertex_array()
