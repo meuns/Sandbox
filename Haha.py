@@ -50,7 +50,9 @@ def main():
 
     for iteration in range(4):
         Ray.trace(ray, iteration, world.display_buffer, random.seed_buffer)
-        Ray.display(ray, iteration + 1)
+        Ray.display_lines(ray, iteration + 1)
+
+    Ray.display_directions(ray, 0)
 
     # Done !
     glfw.swap_buffers(window)
