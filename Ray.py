@@ -11,7 +11,8 @@ from Shader import initialize_shader, initialize_program, dispose_program
 from Vertex import initialize_vertex_array, dispose_vertex_array
 from Random import BUFFER_LAYOUT as RANDOM_BUFFER_LAYOUT, SHADER as RANDOM_SHADER
 from World import BUFFER_LAYOUT as WORLD_BUFFER_LAYOUT
-from Config import RAY_COUNT, RAY_GROUP_SIZE, RAY_INIT_DX, RAY_INIT_DY, RAY_DIR_COUNT, RAY_DIR_GROUP_SIZE
+from Config import RAY_COUNT, RAY_GROUP_SIZE, RAY_DIR_COUNT, RAY_DIR_GROUP_SIZE,\
+    RAY0_DATA_OX, RAY0_DATA_OY, RAY0_DATA_DX, RAY0_DATA_DY
 
 
 BUFFER_LAYOUT = """
@@ -47,21 +48,27 @@ vec2 refract(vec2 i, vec2 n, float inv_eta)
 
 vec2 reflect(vec2 i, vec2 n)
 {{
-  return i - 2.0 * n * dot(n, i);
+  return i + 2.0 * n * dot(-i, n);
 }}
 
-float fresnel_dielectric_dielectric(float eta, float cos_theta)
+float fresnel_dielectric_dielectric(float eta, vec2 i, vec2 n)
 {{
-   float sin_theta_2 = 1.0 - cos_theta * cos_theta;
+    float cos_theta = dot(-i, n);
+    float sin_theta_2 = 1.0 - cos_theta * cos_theta;
+    
+    float t0 = sqrt(1.0 - (sin_theta_2 / (eta * eta)));
+    float t1 = eta * t0;
+    float t2 = eta * cos_theta;
+    
+    float rs = (cos_theta - t1) / (cos_theta + t1);
+    float rp = (t0 - t2) / (t0 + t2);
+    
+    return 0.5 * (rs * rs + rp * rp);
+}}
 
-   float t0 = sqrt(1 - (sin_theta_2 / (eta * eta)));
-   float t1 = eta * t0;
-   float t2 = eta * cos_theta;
-
-   float rs = (cos_theta - t1) / (cos_theta + t1);
-   float rp = (t0 - t2) / (t0 + t2);
-
-   return 0.5 * (rs * rs + rp * rp);
+float fresnel_schlick(float r0, vec2 i, vec2 n)
+{{
+    return r0 + (1.0 - r0) * pow(1.0 - clamp(dot(-i, n), 0.0, 1.0), 5.0);
 }}
 
 layout (local_size_x = {ray_group_size}, local_size_y = 1) in;
@@ -107,17 +114,31 @@ void main()
     }}
     
     vec2 ray1_d, ray1_o;
-    if (true) //(random(ray_index) < 0.9)
-    {{   
-        min_normal = normalize(min_normal) * sign(-dot(min_normal, ray0_d0));
-        ray1_d = reflect(ray0_d0, min_normal);
-        ray1_o = min_hit + 1e-6 * min_normal;
-    }}
-    else
+    ray1_d = ray0_d0;
+    ray1_o = ray0_o1;
+    
+    if (min_dist < 1e6 * 1e6)
     {{
-        min_normal = normalize(min_normal) * sign(-dot(min_normal, ray0_d0));
-        ray1_d = refract(ray0_d0, min_normal, 1.2);
-        ray1_o = min_hit - 1e-6 * min_normal;
+        min_normal = normalize(min_normal);
+        float cos_theta = -dot(min_normal, ray0_d0);
+        
+        float r0 = 1;
+        float inv_eta = (1.0 - sqrt(r0)) / (1.0 + sqrt(r0));
+        
+        float f = fresnel_schlick(r0, ray0_d0, min_normal);    
+        
+        if (random(ray_index) < f)
+        {{   
+            min_normal = min_normal * sign(cos_theta);
+            ray1_d = reflect(ray0_d0, min_normal);
+            ray1_o = min_hit + 1e-6 * min_normal;
+        }}
+        else
+        {{
+            min_normal = min_normal * sign(cos_theta);
+            ray1_d = refract(ray0_d0, min_normal, inv_eta);
+            ray1_o = min_hit - 1e-6 * min_normal;
+        }}
     }}
     
     ray1_ox[ray_index] = ray1_o.x;
@@ -166,7 +187,7 @@ out vec4 Color;
 
 void main()
 {
-    Color = vec4(0.005); 
+    Color = vec4(0.05); 
 }
 """
 
@@ -260,11 +281,6 @@ void main()
 """
 
 
-HALF_RAY_COUNT = RAY_COUNT // 2
-RAY0_DATA_OX = [-0.9 + (i / HALF_RAY_COUNT) * 1.8 for i in range(HALF_RAY_COUNT)] * 2
-RAY0_DATA_OY = [+0.0] * RAY_COUNT
-RAY0_DATA_DX = [RAY_INIT_DX] * RAY_COUNT
-RAY0_DATA_DY = [RAY_INIT_DY] * HALF_RAY_COUNT + [RAY_INIT_DY] * HALF_RAY_COUNT
 RAY1_DATA_OX = [+0.0] * RAY_COUNT
 RAY1_DATA_OY = [+0.0] * RAY_COUNT
 RAY1_DATA_DX = [+0.0] * RAY_COUNT

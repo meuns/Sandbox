@@ -48,7 +48,7 @@ def main():
 
     Random.init(random)
 
-    for iteration in range(4):
+    for iteration in range(400):
         Ray.trace(ray, iteration, world.display_buffer, random.seed_buffer)
         Ray.display_lines(ray, iteration + 1)
 

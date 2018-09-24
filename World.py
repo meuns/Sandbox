@@ -9,7 +9,7 @@ from OpenGL.GL import GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_SHADER_STORAGE_BU
 from Shader import initialize_shader, initialize_program, dispose_program
 from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
 from Vertex import initialize_vertex_array, dispose_vertex_array
-from Config import WORLD_INT_LINE_COUNT, WORLD_INT_X_JITTER, WORLD_INT_Y_JITTER
+from Config import WORLD_LINE_COUNT, INT_X, INT_Y
 
 
 def prepare_lines(line_strip):
@@ -19,14 +19,6 @@ def prepare_lines(line_strip):
         lines.append(data0)
         lines.append(data1)
     return lines
-
-
-INTX_POINT_COUNT = WORLD_INT_LINE_COUNT + 1
-#INT0_X = [-1.0 + (i / INTX_LINE_COUNT) * 2.0 for i in range(INTX_POINT_COUNT)]
-#INT0_Y = [+.2] * INTX_POINT_COUNT
-INT1_X = [WORLD_INT_X_JITTER * random() + -1.0 + (i / WORLD_INT_LINE_COUNT) * 2.0 for i in range(INTX_POINT_COUNT)]
-INT1_Y = [WORLD_INT_Y_JITTER * random() + -0.2 for i in range(INTX_POINT_COUNT)]
-WORLD_LINE_COUNT = WORLD_INT_LINE_COUNT #* 2
 
 
 BUFFER_LAYOUT = """
@@ -132,10 +124,8 @@ class Resources(object):
         )
 
         self.display_buffer = initialize_buffer(prepare_float_buffer_data(
-            #prepare_lines(INT0_X) +
-            prepare_lines(INT1_X) +
-            #prepare_lines(INT0_Y) +
-            prepare_lines(INT1_Y)
+            sum([prepare_lines(line_strip) for line_strip in INT_X], []) +
+            sum([prepare_lines(line_strip) for line_strip in INT_Y], [])
         ))
 
         self.display_vertex_array = initialize_vertex_array()
