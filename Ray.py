@@ -38,22 +38,22 @@ TRACE_COMPUTE_SHADER = """
 {include_random_layout}
 {include_random}
 
-vec2 refract(vec2 i, vec2 n, float inv_eta)
+vec2 refract(vec2 i, vec2 n, float cos_theta, float inv_eta)
 {{
-  float cosi = dot(-i, n);
-  float cost2 = 1.0f - inv_eta * inv_eta * (1.0f - cosi * cosi);
-  vec2 t = inv_eta * i + ((inv_eta * cosi - sqrt(abs(cost2))) * n);
-  return t * vec2(cost2 > 0);
+  //float cos_theta = dot(-i, n);
+  float cost2 = 1.0f - inv_eta * inv_eta * (1.0f - cos_theta * cos_theta);
+  vec2 t = inv_eta * i + ((inv_eta * cos_theta - sqrt(abs(cost2))) * n);
+  return t * vec2(cost2 > 0.0);
 }}
 
-vec2 reflect(vec2 i, vec2 n)
+vec2 reflect(vec2 i, vec2 n, float cos_theta)
 {{
-  return i + 2.0 * n * dot(-i, n);
+  return i + 2.0 * n * cos_theta; //dot(-i, n);
 }}
 
-float fresnel_dielectric_dielectric(float eta, vec2 i, vec2 n)
+float fresnel_dielectric_dielectric(float eta, float cos_theta) //vec2 i, vec2 n)
 {{
-    float cos_theta = dot(-i, n);
+    //float cos_theta = dot(-i, n);
     float sin_theta_2 = 1.0 - cos_theta * cos_theta;
     
     float t0 = sqrt(1.0 - (sin_theta_2 / (eta * eta)));
@@ -66,9 +66,15 @@ float fresnel_dielectric_dielectric(float eta, vec2 i, vec2 n)
     return 0.5 * (rs * rs + rp * rp);
 }}
 
-float fresnel_schlick(float r0, vec2 i, vec2 n)
+float pow5(float value)
 {{
-    return r0 + (1.0 - r0) * pow(1.0 - clamp(dot(-i, n), 0.0, 1.0), 5.0);
+    float value2 = value * value;
+    return value2 * value2 * value;
+}}
+
+float fresnel_schlick(float r0, float cos_theta) //vec2 i, vec2 n)
+{{
+    return r0 + (1.0 - r0) * pow5(1.0 - clamp(cos_theta, 0.0, 1.0));
 }}
 
 layout (local_size_x = {ray_group_size}, local_size_y = 1) in;
@@ -84,7 +90,7 @@ void main()
     vec3 ray_l = cross(vec3(ray0_o0, 1.0), vec3(ray0_o1, 1.0));
     
     vec2 min_hit = ray0_o1;
-    float min_dist = 1e6 * 1e6;
+    float min_dist = +1e32;
     vec2 min_normal = vec2(0.0, 1.0);
             
     for (uint world_line = 0; world_line < WORLD_LINE_COUNT; ++world_line)
@@ -101,10 +107,10 @@ void main()
             if (0.0 < dist_hit && dist_hit < min_dist)
             {{
                 vec2 int_d = int_o1 - int_o0;
-                float len_int_d = length(int_d);
-                float dist_int = dot(int_d / len_int_d, hit - int_o0);
-                if (0.0 < dist_int && dist_int <= len_int_d)
-                {{            
+                float dist_int = dot(int_d, hit - int_o0);
+                // +1e-8 is an epsilon for handling precision issues
+                if (0.0 < dist_int && dist_int <= dot(int_d, int_d) + 1e-8)
+                {{
                     min_hit = hit;
                     min_dist = dist_hit;
                     min_normal = int_d.yx * vec2(-1.0, 1.0);                
@@ -117,26 +123,26 @@ void main()
     ray1_d = ray0_d0;
     ray1_o = ray0_o1;
     
-    if (min_dist < 1e6 * 1e6)
+    if (min_dist < +1e32)
     {{
         min_normal = normalize(min_normal);
         float cos_theta = -dot(min_normal, ray0_d0);
         
-        float r0 = 1;
+        float r0 = 0.5;
         float inv_eta = (1.0 - sqrt(r0)) / (1.0 + sqrt(r0));
         
-        float f = fresnel_schlick(r0, ray0_d0, min_normal);    
+        float f = fresnel_schlick(r0, cos_theta);    
         
         if (random(ray_index) < f)
         {{   
             min_normal = min_normal * sign(cos_theta);
-            ray1_d = reflect(ray0_d0, min_normal);
+            ray1_d = reflect(ray0_d0, min_normal, cos_theta);
             ray1_o = min_hit + 1e-6 * min_normal;
         }}
         else
         {{
             min_normal = min_normal * sign(cos_theta);
-            ray1_d = refract(ray0_d0, min_normal, inv_eta);
+            ray1_d = refract(ray0_d0, min_normal, cos_theta, inv_eta);
             ray1_o = min_hit - 1e-6 * min_normal;
         }}
     }}
@@ -261,7 +267,7 @@ void main()
     uint dir_index = gl_VertexID.x;
     
     float dir_angle = PI * (dir_index / float(RAY_DIR_COUNT - 1));
-    vec2 dir_position = vec2(cos(dir_angle), sin(dir_angle)) * ray_dir_weights[dir_index];
+    vec2 dir_position = vec2(cos(dir_angle), sin(dir_angle)) * ray_dir_weights[dir_index] * 5.0;
     gl_Position = vec4(dir_position, 0.0, 1.0);
 }}
 """.format(
