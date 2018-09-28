@@ -66,6 +66,11 @@ float fresnel_dielectric_dielectric(float eta, float cos_theta) //vec2 i, vec2 n
     return 0.5 * (rs * rs + rp * rp);
 }}
 
+float pow2(float value)
+{{
+    return value * value;
+}}
+
 float pow5(float value)
 {{
     float value2 = value * value;
@@ -96,7 +101,8 @@ void main()
     for (uint world_line = 0; world_line < WORLD_LINE_COUNT; ++world_line)
     {{
         vec2 int_o0, int_o1;
-        get_world_line(world_line << 1, int_o0, int_o1); 
+        float ior_i, ior_t;
+        get_world_line(world_line, int_o0, int_o1, ior_i, ior_t); 
         
         vec3 int_l = cross(vec3(int_o0, 1.0), vec3(int_o1, 1.0));
         vec3 hit_p = cross(ray_l, int_l);
@@ -126,23 +132,26 @@ void main()
     if (min_dist < +1e32)
     {{
         min_normal = normalize(min_normal);
+        
         float cos_theta = -dot(min_normal, ray0_d0);
+        float cos_sign = sign(cos_theta);
         
-        float r0 = 0.5;
-        float inv_eta = (1.0 - sqrt(r0)) / (1.0 + sqrt(r0));
+        min_normal = min_normal * cos_sign;
         
+        float incoming_ior = 1.0;       // Air
+        float transmitted_ior = 5.828;  // Water
+        
+        float r0 = pow2(transmitted_ior - incoming_ior) / pow2(transmitted_ior + incoming_ior);
         float f = fresnel_schlick(r0, cos_theta);    
         
         if (random(ray_index) < f)
         {{   
-            min_normal = min_normal * sign(cos_theta);
             ray1_d = reflect(ray0_d0, min_normal, cos_theta);
             ray1_o = min_hit + 1e-6 * min_normal;
         }}
         else
         {{
-            min_normal = min_normal * sign(cos_theta);
-            ray1_d = refract(ray0_d0, min_normal, cos_theta, inv_eta);
+            ray1_d = refract(ray0_d0, min_normal, cos_theta, 1.0 / transmitted_ior);
             ray1_o = min_hit - 1e-6 * min_normal;
         }}
     }}

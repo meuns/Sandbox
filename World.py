@@ -1,7 +1,6 @@
 # coding: utf8
 
 from itertools import islice
-from random import random
 
 from OpenGL.GL import GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_SHADER_STORAGE_BUFFER, GL_LINES, \
     glBindVertexArray, glUseProgram, glDrawArrays, glBindBufferBase
@@ -9,7 +8,7 @@ from OpenGL.GL import GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_SHADER_STORAGE_BU
 from Shader import initialize_shader, initialize_program, dispose_program
 from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
 from Vertex import initialize_vertex_array, dispose_vertex_array
-from Config import WORLD_LINE_COUNT, INT_X, INT_Y
+from Config import WORLD_LINE_COUNT, INT_X, INT_Y, INT_IOR_I, INT_IOR_T
 
 
 def prepare_lines(line_strip):
@@ -22,20 +21,27 @@ def prepare_lines(line_strip):
 
 
 BUFFER_LAYOUT = """
-#define WORLD_LINE_COUNT %d
+#define WORLD_LINE_COUNT {define_world_line_count}
 
 layout(std430, binding = 0) buffer World
-{
-    float world_px[WORLD_LINE_COUNT << 1];
-    float world_py[WORLD_LINE_COUNT << 1];
-};
+{{
+    float world_pos_x[WORLD_LINE_COUNT << 1];
+    float world_pos_y[WORLD_LINE_COUNT << 1];
+    float world_ior_i[WORLD_LINE_COUNT];
+    float world_ior_t[WORLD_LINE_COUNT];
+}};
 
-void get_world_line(uint first_point_index, out vec2 p0, out vec2 p1)
-{
-    p0 = vec2(world_px[first_point_index + 0], world_py[first_point_index + 0]);
-    p1 = vec2(world_px[first_point_index + 1], world_py[first_point_index + 1]);
-}
-""" % WORLD_LINE_COUNT
+void get_world_line(uint line_index, out vec2 p0, out vec2 p1, out float ior_i, out float ior_t)
+{{
+    uint first_point_index = line_index << 1;
+    p0 = vec2(world_pos_x[first_point_index + 0], world_pos_y[first_point_index + 0]);
+    p1 = vec2(world_pos_x[first_point_index + 1], world_pos_y[first_point_index + 1]);
+    ior_i = world_ior_i[line_index];
+    ior_i = world_ior_i[line_index];
+}}
+""".format(
+    define_world_line_count=WORLD_LINE_COUNT
+)
 
 
 DISPLAY_NORMAL_VERTEX_SHADER = """
@@ -46,7 +52,8 @@ DISPLAY_NORMAL_VERTEX_SHADER = """
 void main()
 {{
     vec2 p0, p1;
-    get_world_line((gl_VertexID >> 1) << 1, p0, p1);
+    float ior_i, ior_t;
+    get_world_line(gl_VertexID >> 1, p0, p1, ior_t, ior_t);
     
     vec2 pc = (p0 + p1) * 0.5;
     
@@ -83,7 +90,7 @@ DISPLAY_LINE_VERTEX_SHADER = """
 
 void main()
 {
-    gl_Position = vec4(world_px[gl_VertexID], world_py[gl_VertexID], 0.0, 1.0);
+    gl_Position = vec4(world_pos_x[gl_VertexID], world_pos_y[gl_VertexID], 0.0, 1.0);
 }
 """ % BUFFER_LAYOUT
 
@@ -125,7 +132,9 @@ class Resources(object):
 
         self.display_buffer = initialize_buffer(prepare_float_buffer_data(
             sum([prepare_lines(line_strip) for line_strip in INT_X], []) +
-            sum([prepare_lines(line_strip) for line_strip in INT_Y], [])
+            sum([prepare_lines(line_strip) for line_strip in INT_Y], []) +
+            sum(INT_IOR_I, []) +
+            sum(INT_IOR_T, [])
         ))
 
         self.display_vertex_array = initialize_vertex_array()
