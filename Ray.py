@@ -13,6 +13,7 @@ from Random import BUFFER_LAYOUT as RANDOM_BUFFER_LAYOUT, SHADER as RANDOM_SHADE
 from World import BUFFER_LAYOUT as WORLD_BUFFER_LAYOUT
 from Config import RAY_COUNT, RAY_GROUP_SIZE, RAY_DIR_COUNT, RAY_DIR_GROUP_SIZE,\
     RAY0_DATA_OX, RAY0_DATA_OY, RAY0_DATA_DX, RAY0_DATA_DY
+from View import update_view_projection, DATA_LAYOUT as VIEW_DATA_LAYOUT
 
 
 BUFFER_LAYOUT = """
@@ -174,24 +175,23 @@ void main()
 DISPLAY_VERTEX_SHADER = """
 #version 430
 
-{ray_buffer0_layout}
-
-{ray_buffer1_layout}
+{include_view_data_layout}
+{include_ray_buffer0_layout}
+{include_ray_buffer1_layout}
 
 void main()
 {{
     bool is_ray0 = gl_VertexID % 2 == 0;
     int index = gl_VertexID >> 1;
 
-    gl_Position = vec4(
-        is_ray0 ? ray0_ox[index] : ray1_ox[index],
-        is_ray0 ? ray0_oy[index] : ray1_oy[index],
-        0.0, 1.0
-    );
+    vec3 position = mul(view_projection, vec3(is_ray0 ? ray0_ox[index] : ray1_ox[index], is_ray0 ? ray0_oy[index] : ray1_oy[index], 1.0));
+
+    gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
 }}
 """.format(
-    ray_buffer0_layout=RAY_BUFFER0_LAYOUT,
-    ray_buffer1_layout=RAY_BUFFER1_LAYOUT,
+    include_view_data_layout=VIEW_DATA_LAYOUT,
+    include_ray_buffer0_layout=RAY_BUFFER0_LAYOUT,
+    include_ray_buffer1_layout=RAY_BUFFER1_LAYOUT,
 )
 
 
@@ -301,6 +301,11 @@ RAY1_DATA_OY = [+0.0] * RAY_COUNT
 RAY1_DATA_DX = [+0.0] * RAY_COUNT
 RAY1_DATA_DY = [+0.0] * RAY_COUNT
 
+RAY2_DATA_OX = [+0.0] * RAY_COUNT
+RAY2_DATA_OY = [+0.0] * RAY_COUNT
+RAY2_DATA_DX = [+0.0] * RAY_COUNT
+RAY2_DATA_DY = [+0.0] * RAY_COUNT
+
 
 class Resources(object):
 
@@ -310,6 +315,7 @@ class Resources(object):
         self.display_program = None
         self.trace_ray0_buffer = None
         self.trace_ray1_buffer = None
+        self.trace_ray2_buffer = None
         self.gather_dir_program = None
         self.display_dir_program = None
         self.display_dir_buffer = None
@@ -328,9 +334,11 @@ class Resources(object):
 
         ray0_buffer_data = prepare_float_buffer_data(RAY0_DATA_OX + RAY0_DATA_OY + RAY0_DATA_DX + RAY0_DATA_DY)
         ray1_buffer_data = prepare_float_buffer_data(RAY1_DATA_OX + RAY1_DATA_OY + RAY1_DATA_DX + RAY1_DATA_DY)
+        ray2_buffer_data = prepare_float_buffer_data(RAY2_DATA_OX + RAY2_DATA_OY + RAY2_DATA_DX + RAY2_DATA_DY)
 
         self.trace_ray0_buffer = initialize_buffer(ray0_buffer_data)
         self.trace_ray1_buffer = initialize_buffer(ray1_buffer_data)
+        self.trace_ray2_buffer = initialize_buffer(ray2_buffer_data)
 
         self.gather_dir_program = initialize_program(
             initialize_shader(GL_COMPUTE_SHADER, GATHER_COMPUTE_SHADER)
@@ -351,10 +359,29 @@ class Resources(object):
         self.display_program = dispose_program(self.display_program)
         self.trace_ray0_buffer = dispose_buffer(self.trace_ray0_buffer)
         self.trace_ray1_buffer = dispose_buffer(self.trace_ray1_buffer)
+        self.trace_ray2_buffer = dispose_buffer(self.trace_ray2_buffer)
         self.gather_dir_program = dispose_program(self.gather_dir_program)
         self.display_dir_program = dispose_program(self.display_dir_program)
         self.display_dir_buffer = dispose_buffer(self.display_dir_buffer)
         self.display_vertex_array = dispose_vertex_array(self.display_vertex_array)
+
+
+def _select_input_buffer(resources, iteration):
+
+    if iteration == 0:
+        return resources.trace_ray0_buffer
+    elif iteration % 2 == 0:
+        return resources.trace_ray2_buffer
+    else:
+        return resources.trace_ray1_buffer
+
+
+def _select_output_buffer(resources, iteration):
+
+    if iteration % 2 == 0:
+        return resources.trace_ray1_buffer
+    else:
+        return resources.trace_ray2_buffer
 
 
 def trace(resources, iteration, world_buffer, random_buffer):
@@ -362,8 +389,8 @@ def trace(resources, iteration, world_buffer, random_buffer):
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glUseProgram(resources.trace_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, world_buffer)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _select_input_buffer(resources, iteration))
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _select_output_buffer(resources, iteration))
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, random_buffer)
     glDispatchCompute(RAY_COUNT // RAY_GROUP_SIZE, 1, 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, 0)
@@ -373,7 +400,7 @@ def trace(resources, iteration, world_buffer, random_buffer):
     glUseProgram(0)
 
 
-def display_lines(resources, iteration):
+def display_lines(resources, view_projection, iteration):
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glEnable(GL_BLEND)
@@ -381,6 +408,7 @@ def display_lines(resources, iteration):
     glBlendFunc(GL_ONE, GL_ONE)
     glBindVertexArray(resources.display_vertex_array)
     glUseProgram(resources.display_program)
+    update_view_projection(view_projection)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
     glDrawArrays(GL_LINES, 0, RAY_COUNT << 1)

@@ -2,6 +2,8 @@ import glfw
 
 from OpenGL.GL import GL_COLOR_BUFFER_BIT, glViewport, glClear, glClearColor
 
+from glm import mat3
+
 import Random
 import Ray
 import World
@@ -42,15 +44,17 @@ def main():
 
     #while not glfw.window_should_close(window):
 
+    Random.init(random)
+
     glClear(GL_COLOR_BUFFER_BIT)
 
-    World.display(world)
+    view_projection = mat3(0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 0.5, 0.0, 1.0)
 
-    Random.init(random)
+    World.display(world, view_projection)
 
     for iteration in range(10):
         Ray.trace(ray, iteration, world.display_buffer, random.seed_buffer)
-        Ray.display_lines(ray, iteration + 1)
+        Ray.display_lines(ray, view_projection, iteration + 1)
 
     Ray.display_directions(ray, 0)
 

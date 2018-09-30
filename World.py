@@ -5,10 +5,15 @@ from itertools import islice
 from OpenGL.GL import GL_VERTEX_SHADER, GL_FRAGMENT_SHADER, GL_SHADER_STORAGE_BUFFER, GL_LINES, \
     glBindVertexArray, glUseProgram, glDrawArrays, glBindBufferBase
 
+from glm import mat3
+
 from Shader import initialize_shader, initialize_program, dispose_program
 from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
 from Vertex import initialize_vertex_array, dispose_vertex_array
+
 from Config import WORLD_LINE_COUNT, INT_X, INT_Y, INT_IOR_I, INT_IOR_T
+
+from View import update_view_projection, DATA_LAYOUT as VIEW_DATA_LAYOUT
 
 
 def prepare_lines(line_strip):
@@ -47,7 +52,8 @@ void get_world_line(uint line_index, out vec2 p0, out vec2 p1, out float ior_i, 
 DISPLAY_NORMAL_VERTEX_SHADER = """
 #version 430
 
-{buffer_layout}
+{include_view_data_layout}
+{include_world_buffer_layout}
 
 void main()
 {{
@@ -55,19 +61,14 @@ void main()
     float ior_i, ior_t;
     get_world_line(gl_VertexID >> 1, p0, p1, ior_t, ior_t);
     
-    vec2 pc = (p0 + p1) * 0.5;
+    // pair vertices are normal origins and odd vertices are normal tips
+    vec3 position = mul(view_projection, vec3((p0 + p1) * 0.5 + (gl_VertexID % 2 == 0 ? vec2(0.0) : (p1 - p0).yx * vec2(-1.0, 1.0) * 0.25), 1.0));
     
-    if (gl_VertexID % 2 == 0)
-    {{
-        gl_Position = vec4(pc, 0.0, 1.0);
-    }}
-    else
-    {{
-        gl_Position = vec4(pc + (p1 - p0).yx * vec2(-1.0, 1.0) * 0.25, 0.0, 1.0);
-    }}
+    gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
 }}
 """.format(
-    buffer_layout=BUFFER_LAYOUT
+    include_world_buffer_layout=BUFFER_LAYOUT,
+    include_view_data_layout=VIEW_DATA_LAYOUT
 )
 
 
@@ -86,13 +87,18 @@ void main()
 DISPLAY_LINE_VERTEX_SHADER = """
 #version 430
 
-%s
+{include_view_data_layout}
+{include_world_buffer_layout}
 
 void main()
-{
-    gl_Position = vec4(world_pos_x[gl_VertexID], world_pos_y[gl_VertexID], 0.0, 1.0);
-}
-""" % BUFFER_LAYOUT
+{{
+    vec3 position = mul(view_projection, vec3(world_pos_x[gl_VertexID], world_pos_y[gl_VertexID], 1.0));
+    gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
+}}
+""".format(
+    include_world_buffer_layout=BUFFER_LAYOUT,
+    include_view_data_layout=VIEW_DATA_LAYOUT
+)
 
 DISPLAY_LINE_FRAGMENT_SHADER = """
 #version 430
@@ -153,11 +159,12 @@ def bind_buffer(resources):
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, resources.display_buffer)
 
 
-def display(resources):
+def display(resources, view_projection):
 
     glBindVertexArray(resources.display_vertex_array)
     glUseProgram(resources.display_line_program)
     bind_buffer(resources)
+    update_view_projection(view_projection)
     glDrawArrays(GL_LINES, 0, resources.display_vertex_count)
     glUseProgram(resources.display_normal_program)
     bind_buffer(resources)
