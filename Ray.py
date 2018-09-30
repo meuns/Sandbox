@@ -97,6 +97,7 @@ void main()
     vec2 min_hit = ray0_o1;
     float min_dist = +1e32;
     vec2 min_normal = vec2(0.0, 1.0);
+    float min_ior_i, min_ior_t;
             
     for (uint world_line = 0; world_line < WORLD_LINE_COUNT; ++world_line)
     {{
@@ -119,7 +120,9 @@ void main()
                 {{
                     min_hit = hit;
                     min_dist = dist_hit;
-                    min_normal = int_d.yx * vec2(-1.0, 1.0);                
+                    min_normal = int_d.yx * vec2(-1.0, 1.0);
+                    min_ior_i = ior_i;
+                    min_ior_t = ior_t;
                 }}
             }} 
         }}
@@ -136,22 +139,19 @@ void main()
         float cos_theta = -dot(min_normal, ray0_d0);
         float cos_sign = sign(cos_theta);
         
-        min_normal = min_normal * cos_sign;
-        
-        float incoming_ior = 1.0;       // Air
-        float transmitted_ior = 5.828;  // Water
-        
-        float r0 = pow2(transmitted_ior - incoming_ior) / pow2(transmitted_ior + incoming_ior);
-        float f = fresnel_schlick(r0, cos_theta);    
+        min_ior_i = cos_sign > 0.0 ? min_ior_i : min_ior_t;
+        min_ior_t = cos_sign > 0.0 ? min_ior_t : min_ior_i;
+        float r0 = pow2(min_ior_t - min_ior_i) / pow2(min_ior_t + min_ior_i);
+        float f = fresnel_schlick(r0, cos_theta);
         
         if (random(ray_index) < f)
         {{   
-            ray1_d = reflect(ray0_d0, min_normal, cos_theta);
+            ray1_d = reflect(ray0_d0, min_normal * cos_sign, cos_theta);
             ray1_o = min_hit + 1e-6 * min_normal;
         }}
         else
         {{
-            ray1_d = refract(ray0_d0, min_normal, cos_theta, 1.0 / transmitted_ior);
+            ray1_d = refract(ray0_d0, min_normal * cos_sign, cos_theta, 1.0 / min_ior_t);
             ray1_o = min_hit - 1e-6 * min_normal;
         }}
     }}
@@ -383,7 +383,7 @@ def display_lines(resources, iteration):
     glUseProgram(resources.display_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
-    glDrawArrays(GL_LINES, 0, RAY_COUNT * 2)
+    glDrawArrays(GL_LINES, 0, RAY_COUNT << 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0)
     glUseProgram(0)

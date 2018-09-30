@@ -37,7 +37,7 @@ void get_world_line(uint line_index, out vec2 p0, out vec2 p1, out float ior_i, 
     p0 = vec2(world_pos_x[first_point_index + 0], world_pos_y[first_point_index + 0]);
     p1 = vec2(world_pos_x[first_point_index + 1], world_pos_y[first_point_index + 1]);
     ior_i = world_ior_i[line_index];
-    ior_i = world_ior_i[line_index];
+    ior_t = world_ior_t[line_index];
 }}
 """.format(
     define_world_line_count=WORLD_LINE_COUNT
