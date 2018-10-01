@@ -184,7 +184,7 @@ void main()
     bool is_ray0 = gl_VertexID % 2 == 0;
     int index = gl_VertexID >> 1;
 
-    vec3 position = mul(view_projection, vec3(is_ray0 ? ray0_ox[index] : ray1_ox[index], is_ray0 ? ray0_oy[index] : ray1_oy[index], 1.0));
+    vec3 position = view_projection * vec3(is_ray0 ? ray0_ox[index] : ray1_ox[index], is_ray0 ? ray0_oy[index] : ray1_oy[index], 1.0);
 
     gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
 }}
@@ -369,7 +369,7 @@ class Resources(object):
 def _select_input_buffer(resources, iteration):
 
     if iteration == 0:
-        return resources.trace_ray0_buffer
+        return resources.trace_ray0_buffer  # we never mutate this buffer
     elif iteration % 2 == 0:
         return resources.trace_ray2_buffer
     else:
@@ -409,8 +409,8 @@ def display_lines(resources, view_projection, iteration):
     glBindVertexArray(resources.display_vertex_array)
     glUseProgram(resources.display_program)
     update_view_projection(view_projection)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _select_input_buffer(resources, iteration))
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _select_output_buffer(resources, iteration))
     glDrawArrays(GL_LINES, 0, RAY_COUNT << 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0)

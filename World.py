@@ -62,7 +62,7 @@ void main()
     get_world_line(gl_VertexID >> 1, p0, p1, ior_t, ior_t);
     
     // pair vertices are normal origins and odd vertices are normal tips
-    vec3 position = mul(view_projection, vec3((p0 + p1) * 0.5 + (gl_VertexID % 2 == 0 ? vec2(0.0) : (p1 - p0).yx * vec2(-1.0, 1.0) * 0.25), 1.0));
+    vec3 position = view_projection * vec3((p0 + p1) * 0.5 + (gl_VertexID % 2 == 0 ? vec2(0.0) : (p1 - p0).yx * vec2(-1.0, 1.0) * 0.25), 1.0);
     
     gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
 }}
@@ -92,7 +92,7 @@ DISPLAY_LINE_VERTEX_SHADER = """
 
 void main()
 {{
-    vec3 position = mul(view_projection, vec3(world_pos_x[gl_VertexID], world_pos_y[gl_VertexID], 1.0));
+    vec3 position = view_projection * vec3(world_pos_x[gl_VertexID], world_pos_y[gl_VertexID], 1.0);
     gl_Position = vec4(position.xy / position.z, 0.0, 1.0);
 }}
 """.format(
