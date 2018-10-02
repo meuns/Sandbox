@@ -2,17 +2,12 @@ import glfw
 
 from OpenGL.GL import GL_COLOR_BUFFER_BIT, glViewport, glClear, glClearColor
 
-from glm import mat3, vec3, vec2
+from glm import mat3, vec3, vec2, distance
 
 
 import Random
 import Ray
 import World
-
-
-def mat_view(view_offset):
-
-    return mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, view_offset[0], view_offset[1], 1.0)
 
 
 def mat_projection(window_width, window_height):
@@ -79,34 +74,52 @@ def main():
 
     # Pan and zoom
     last_mouse_left = 0
-    last_cursor = None
+    last_mouse_right = 0
+    last_cursor_left = None
     last_view_offset = vec2(0.0, 0.0)
     current_view_offset = vec2(0.0, 0.0)
+    last_view_zoom = 1.0
+    current_view_zoom = 0.0
+
+    last_view = mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+    current_view = mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
 
     while not glfw.window_should_close(window):
 
         window_width, window_height = glfw.get_window_size(window)
 
+        next_cursor_mat = mat_inv_projection(window_width, window_height) * mat_inv_viewport(window_width, window_height)
+        next_cursor = (next_cursor_mat * vec3(*glfw.get_cursor_pos(window), 1.0)).xy
+
         next_mouse_left = glfw.get_mouse_button(window, 0)
         if last_mouse_left != next_mouse_left:
-            next_cursor_mat = mat_inv_projection(window_width, window_height) * mat_inv_viewport(window_width, window_height)
-            next_cursor_x, next_cursor_y = glfw.get_cursor_pos(window)
-            next_cursor = (next_cursor_mat * vec3(next_cursor_x, next_cursor_y, 1.0)).xy
             if next_mouse_left:
-                last_cursor = next_cursor
+                last_cursor_left = next_cursor
             else:
-                last_view_offset = last_view_offset + (next_cursor - last_cursor)
-                current_view_offset = vec2(0.0, 0.0)
+                last_view = last_view * current_view
+                current_view = mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
             last_mouse_left = next_mouse_left
         else:
             if next_mouse_left:
-                next_cursor_mat = mat_inv_projection(window_width, window_height) * mat_inv_viewport(window_width, window_height)
-                next_cursor_x, next_cursor_y = glfw.get_cursor_pos(window)
-                next_cursor = (next_cursor_mat * vec3(next_cursor_x, next_cursor_y, 1.0)).xy
-                current_view_offset = next_cursor - last_cursor
+                delta_cursor = next_cursor - last_cursor_left
+                current_view = mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, delta_cursor.x, delta_cursor.y, 1.0)
+
+        if not next_mouse_left:
+            next_mouse_right = glfw.get_mouse_button(window, 1)
+            if last_mouse_right != next_mouse_right:
+                if next_mouse_right:
+                    last_cursor_left = next_cursor
+                else:
+                    last_view = last_view * current_view
+                    current_view = mat3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)
+                last_mouse_right = next_mouse_right
+            else:
+                if next_mouse_right:
+                    current_view_zoom = 1.0 + (next_cursor.y - last_cursor_left.y)
+                    current_view = mat3(current_view_zoom, 0.0, 0.0, 0.0, current_view_zoom, 0.0, 0.0, 0.0, 1.0)
 
         # Setup view and projection
-        view_projection = mat_projection(window_width, window_height) * mat_view(last_view_offset + current_view_offset)
+        view_projection = mat_projection(window_width, window_height) * (last_view * current_view)
 
         # Keep random stable through frames
         Random.init(random)
