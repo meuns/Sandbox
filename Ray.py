@@ -4,7 +4,7 @@ from OpenGL.GL import GL_COMPUTE_SHADER, GL_FRAGMENT_SHADER, GL_VERTEX_SHADER, \
     GL_SHADER_STORAGE_BUFFER, GL_SHADER_STORAGE_BARRIER_BIT, GL_LINES, GL_LINE_STRIP, \
     GL_BLEND, GL_FUNC_ADD, GL_ONE, \
     glUseProgram, glBindBufferBase, glDrawArrays, glBindVertexArray, glDispatchCompute, glMemoryBarrier, glEnable,\
-    glDisable, glBlendFunc, glBlendEquation
+    glDisable, glBlendFunc, glBlendEquation, glUniform1ui
 
 from Buffer import prepare_float_buffer_data, initialize_buffer, dispose_buffer
 from Shader import initialize_shader, initialize_program, dispose_program
@@ -39,6 +39,8 @@ TRACE_COMPUTE_SHADER = """
 {include_random_layout}
 {include_random}
 
+layout(location=0) uniform uint iteration;
+
 vec2 refract(vec2 i, vec2 n, float cos_theta, float inv_eta)
 {{
   //float cos_theta = dot(-i, n);
@@ -72,23 +74,12 @@ float pow2(float value)
     return value * value;
 }}
 
-float pow5(float value)
-{{
-    float value2 = value * value;
-    return value2 * value2 * value;
-}}
-
-float fresnel_schlick(float r0, float cos_theta) //vec2 i, vec2 n)
-{{
-    return r0 + (1.0 - r0) * pow5(1.0 - clamp(cos_theta, 0.0, 1.0));
-}}
-
 layout (local_size_x = {ray_group_size}, local_size_y = 1) in;
 
 void main()
 {{
     uint ray_index = gl_GlobalInvocationID.x;
-
+    
     vec2 ray0_d0 = normalize(vec2(ray0_dx[ray_index], ray0_dy[ray_index]));
     vec2 ray0_o0 = vec2(ray0_ox[ray_index], ray0_oy[ray_index]);    
     vec2 ray0_o1 = ray0_o0 + 1e6 * ray0_d0;
@@ -137,22 +128,29 @@ void main()
     {{
         min_normal = normalize(min_normal);
         
-        float cos_theta = -dot(min_normal, ray0_d0);
-        float cos_sign = sign(cos_theta);
+        float cos_theta = dot(min_normal, -ray0_d0);
+        float eta;
+        if (cos_theta < 0.0)
+        {{
+            min_normal = -min_normal;
+            cos_theta = dot(min_normal, -ray0_d0);
+            eta = min_ior_i / min_ior_t;
+        }}
+        else
+        {{
+            eta = min_ior_t / min_ior_i;
+        }}
         
-        min_ior_i = cos_sign > 0.0 ? min_ior_i : min_ior_t;
-        min_ior_t = cos_sign > 0.0 ? min_ior_t : min_ior_i;
-        float r0 = pow2(min_ior_t - min_ior_i) / pow2(min_ior_t + min_ior_i);
-        float f = fresnel_schlick(r0, cos_theta);
+        float f = fresnel_dielectric_dielectric(eta, cos_theta);
         
         if (random(ray_index) < f)
         {{   
-            ray1_d = reflect(ray0_d0, min_normal * cos_sign, cos_theta);
+            ray1_d = reflect(ray0_d0, min_normal, cos_theta);
             ray1_o = min_hit + 1e-6 * min_normal;
         }}
         else
         {{
-            ray1_d = refract(ray0_d0, min_normal * cos_sign, cos_theta, 1.0 / min_ior_t);
+            ray1_d = refract(ray0_d0, min_normal, cos_theta, 1.0 / eta);
             ray1_o = min_hit - 1e-6 * min_normal;
         }}
     }}
@@ -247,7 +245,7 @@ void main()
         vec2 ray_d = normalize(vec2(ray0_dx[ray_index], ray0_dy[ray_index]));
         float ray_angle = acos(ray_d.x);
         float delta_angle = ray_angle - dir_angle;
-        if (abs(delta_angle) < dir_step)    // TODO we will miss some rays
+        if (abs(delta_angle) < dir_step && ray_d.y > 0.0)    // TODO we will miss some rays
         {{
             ray_dir_weight += 1.0 / RAY_COUNT;
         }}
@@ -291,7 +289,7 @@ out vec4 Color;
 
 void main()
 {
-    Color = vec4(1.0); 
+    Color = vec4(1.0, 0.0, 0.0, 1.0); 
 }
 """
 
@@ -388,6 +386,7 @@ def trace(resources, iteration, world_buffer, random_buffer):
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glUseProgram(resources.trace_program)
+    glUniform1ui(0, iteration)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, world_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _select_input_buffer(resources, iteration))
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _select_output_buffer(resources, iteration))
@@ -424,8 +423,8 @@ def display_directions(resources, iteration):
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glUseProgram(resources.gather_dir_program)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, resources.display_dir_buffer)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, resources.trace_ray0_buffer if iteration % 2 == 0 else resources.trace_ray1_buffer)
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, resources.trace_ray1_buffer if iteration % 2 == 0 else resources.trace_ray0_buffer)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _select_input_buffer(resources, iteration))
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _select_output_buffer(resources, iteration))
     glDispatchCompute(RAY_DIR_COUNT // RAY_DIR_GROUP_SIZE, 1, 1)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, 0)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, 0)
