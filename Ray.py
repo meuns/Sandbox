@@ -39,7 +39,7 @@ TRACE_COMPUTE_SHADER = """
 {include_random_layout}
 {include_random}
 
-layout(location=0) uniform uint iteration;
+//layout(location=0) uniform uint iteration;
 
 vec2 refract(vec2 i, vec2 n, float cos_theta, float inv_eta)
 {{
@@ -386,7 +386,7 @@ def trace(resources, iteration, world_buffer, random_buffer):
 
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT)
     glUseProgram(resources.trace_program)
-    glUniform1ui(0, iteration)
+    #glUniform1ui(0, iteration)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, world_buffer)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, _select_input_buffer(resources, iteration))
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, _select_output_buffer(resources, iteration))
