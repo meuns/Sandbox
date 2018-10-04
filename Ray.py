@@ -143,7 +143,7 @@ void main()
         
         float f = fresnel_dielectric_dielectric(eta, cos_theta);
         
-        if (random(ray_index) < f)
+        if (random(ray_index) < 0.5)
         {{   
             ray1_d = reflect(ray0_d0, min_normal, cos_theta);
             ray1_o = min_hit + 1e-6 * min_normal;
@@ -200,7 +200,7 @@ out vec4 Color;
 
 void main()
 {
-    Color = vec4(0.05); 
+    Color = vec4(1.0); 
 }
 """
 

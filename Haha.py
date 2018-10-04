@@ -139,7 +139,7 @@ def main():
 
         World.display(world, current_view_projection)
 
-        for iteration in range(10):
+        for iteration in range(128):
             Ray.trace(ray, iteration, world.display_buffer, random.seed_buffer)
             Ray.display_lines(ray, current_view_projection, iteration)
 

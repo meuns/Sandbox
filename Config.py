@@ -1,5 +1,6 @@
 # coding: utf8
 
+from itertools import count
 from random import random, seed
 
 
@@ -7,7 +8,7 @@ from random import random, seed
 seed(42)
 
 # Compute shader settings
-RAY_COUNT = 128 * 16
+RAY_COUNT = 128 * 32
 RAY_GROUP_SIZE = 128
 
 RAY_DIR_COUNT = 128
@@ -40,35 +41,60 @@ RAY0_DATA_DY = [RAY_INIT_DY] * RAY_COUNT
 #INT_Y = [WORLD_INT_Y_JITTER * random() + -0.2 for i in range(INTX_POINT_COUNT)]
 #WORLD_LINE_COUNT = WORLD_INT_LINE_COUNT
 
-# World 1
-#WORLD_INT_LINE_COUNT = 128
+# World 1 (mirror)
+#WORLD_LINE_COUNT = (1 << 12)
 #WORLD_INT_X_JITTER = 0.0
-#WORLD_INT_Y_JITTER = -0.5
-#
-#INTX_POINT_COUNT = WORLD_INT_LINE_COUNT + 1
-#INT0_X = [WORLD_INT_X_JITTER * random() + -1.0 + (i / WORLD_INT_LINE_COUNT) * 2.0 for i in range(INTX_POINT_COUNT)]
-#INT0_Y = [WORLD_INT_Y_JITTER * random() + -0.2 for i in range(INTX_POINT_COUNT)]
+#WORLD_INT_Y_JITTER = 2 / WORLD_LINE_COUNT
+#INTX_LINE_COUNT = WORLD_LINE_COUNT
+#INTX_POINT_COUNT = INTX_LINE_COUNT + 1
+#INT0_X = [WORLD_INT_X_JITTER * random() - 2.0 + (i / INTX_LINE_COUNT) * 4.0 for i in range(INTX_POINT_COUNT)]
+#INT0_Y = [WORLD_INT_Y_JITTER * random() - 0.2 for i in range(INTX_POINT_COUNT)]
+#INT0_IOR_I = [1.0] * INTX_LINE_COUNT
+#INT0_IOR_T = [1e9] * INTX_LINE_COUNT
 #INT_X = [INT0_X]
 #INT_Y = [INT0_Y]
-#WORLD_LINE_COUNT = len(INT_X[0]) - 1
+#INT_IOR_I = [INT0_IOR_I]
+#INT_IOR_T = [INT0_IOR_T]
 
-# World 2
+# World 2 (glass slab on mirror)
+#WORLD_LINE_COUNT = 1024
+#WORLD_INT_X_JITTER = 0.0
+#WORLD_INT_Y_JITTER = 0.01
+#INTX_LINE_COUNT = WORLD_LINE_COUNT // 2
+#INTX_POINT_COUNT = INTX_LINE_COUNT + 1
+#INT0_X = [WORLD_INT_X_JITTER * random() - 2.0 + (i / INTX_LINE_COUNT) * 4.0 for i in range(INTX_POINT_COUNT)]
+#INT0_Y = [WORLD_INT_Y_JITTER * random() + 0.2 for i in range(INTX_POINT_COUNT)]
+#INT0_IOR_I = [1.0] * INTX_LINE_COUNT
+#INT0_IOR_T = [1.4] * INTX_LINE_COUNT
+#INT1_X = [WORLD_INT_X_JITTER * random() - 2.0 + (i / INTX_LINE_COUNT) * 4.0 for i in range(INTX_POINT_COUNT)]
+#INT1_Y = [WORLD_INT_Y_JITTER * random() - 0.2 for i in range(INTX_POINT_COUNT)]
+#INT1_IOR_I = [1.4] * INTX_LINE_COUNT
+#INT1_IOR_T = [1e9] * INTX_LINE_COUNT
+#INT_X = [INT0_X, INT1_X]
+#INT_Y = [INT0_Y, INT1_Y]
+#INT_IOR_I = [INT0_IOR_I, INT1_IOR_I]
+#INT_IOR_T = [INT0_IOR_T, INT1_IOR_T]
+
+# World 3 (pile of media)
+RAY_COUNT = 128 * 32
+RAY_GROUP_SIZE = 128
+RAY0_DATA_OX = [+0.0] * RAY_COUNT
+RAY0_DATA_OY = [+0.3] * RAY_COUNT
+RAY0_DATA_DX = [-1.0] * RAY_COUNT
+RAY0_DATA_DY = [-1.0] * RAY_COUNT
+
 WORLD_LINE_COUNT = 1024
 WORLD_INT_X_JITTER = 0.0
 WORLD_INT_Y_JITTER = 0.01
 
-INTX_LINE_COUNT = WORLD_LINE_COUNT // 2
-INTX_POINT_COUNT = INTX_LINE_COUNT + 1
-INT0_X = [WORLD_INT_X_JITTER * random() - 2.0 + (i / INTX_LINE_COUNT) * 4.0 for i in range(INTX_POINT_COUNT)]
-INT0_Y = [WORLD_INT_Y_JITTER * random() + 0.2 for i in range(INTX_POINT_COUNT)]
-INT0_IOR_I = [1.0] * INTX_LINE_COUNT
-INT0_IOR_T = [1.4] * INTX_LINE_COUNT
-INT1_X = [WORLD_INT_X_JITTER * random() - 2.0 + (i / INTX_LINE_COUNT) * 4.0 for i in range(INTX_POINT_COUNT)]
-INT1_Y = [WORLD_INT_Y_JITTER * random() - 0.2 for i in range(INTX_POINT_COUNT)]
-INT1_IOR_I = [1.4] * INTX_LINE_COUNT
-INT1_IOR_T = [1.0] * INTX_LINE_COUNT
+INT_IOR = [1.0, 1.4, 1.2, 1.5, 1.5]
+INT_DELTA_Y = 1.0 / (len(INT_IOR) - 1)
+INT_LINE_COUNT = WORLD_LINE_COUNT // (len(INT_IOR) - 1)
+INT_POINT_COUNT = INT_LINE_COUNT + 1
 
-INT_X = [INT0_X, INT1_X]
-INT_Y = [INT0_Y, INT1_Y]
-INT_IOR_I = [INT0_IOR_I, INT1_IOR_I]
-INT_IOR_T = [INT0_IOR_T, INT1_IOR_T]
+INT_X, INT_Y, INT_IOR_I, INT_IOR_T = [], [], [], []
+for j, ior_i, ior_t in zip(count(), INT_IOR[1:], INT_IOR[:-1]):
+    INT_X.append([WORLD_INT_X_JITTER * random() - 4.0 + (i / INT_LINE_COUNT) * 8.0 for i in range(INT_POINT_COUNT)])
+    INT_Y.append([WORLD_INT_Y_JITTER * random() + 0.0 - j * INT_DELTA_Y for i in range(INT_POINT_COUNT)])
+    INT_IOR_I.append([ior_i] * INT_LINE_COUNT)
+    INT_IOR_T.append([ior_t] * INT_LINE_COUNT)
